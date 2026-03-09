@@ -1,0 +1,415 @@
+BOOKSHELF APP — ERROR FIXING GUIDE
+====================================
+Ordered from easiest to hardest. Do NOT apply these as automated patches —
+read each step, understand it, then make the change manually.
+
+================================================================================
+FIX 1 — Remove "Explore" Scroll Hint  [TRIVIAL]
+================================================================================
+FILE: src/pages/Home.tsx
+LINES: ~142–146 (inside <section className="hero-section">, near the bottom)
+
+DELETE this entire block:
+
+    {/* Scroll indicator */}
+    <div className="hero-scroll-hint">
+      <span>Explore</span>
+      <div className="hero-scroll-line" />
+    </div>
+
+OPTIONAL CLEANUP — Also delete the matching CSS from src/index.css (~lines 657–686):
+  .hero-scroll-hint { ... }
+  .hero-scroll-line { ... }
+  @keyframes scrollLinePulse { ... }
+
+Removing the CSS is safe and cleans up dead code, but the app won't break if
+you leave it.
+
+================================================================================
+FIX 2 — Star Color Contrast  [TRIVIAL]
+================================================================================
+FILE: src/components/StarRating.tsx
+
+PROBLEM: The empty star (#D4C4A8) and filled star (#D4A96A) are nearly the same
+tone as the cream background (#D4C2A0). Stars are nearly invisible.
+
+CHANGE (2 values only):
+
+  Line ~39 — empty star:
+    BEFORE:  color: '#D4C4A8'
+    AFTER:   color: '#A89070'
+
+  Line ~44 — filled star:
+    BEFORE:  color: '#D4A96A'
+    AFTER:   color: '#C8860A'
+
+That's it. Two hex swaps, done.
+
+================================================================================
+FIX 3 — Community Rating Doesn't Refresh After Submit  [EASY]
+================================================================================
+FILE: src/hooks/useReviews.ts
+
+PROBLEM: After submitting or deleting a review, the community average rating on
+BookPage doesn't update. This is because useSubmitReview and useDeleteReview
+both invalidate ['reviews', bookId] and ['my-review', bookId], but NOT
+['book', bookId]. The community rating comes from useBook() (key ['book', id]),
+which never re-fetches.
+
+FIX — In useSubmitReview's onSuccess callback, ADD this line immediately after
+the existing invalidateQueries calls:
+
+    qc.invalidateQueries({ queryKey: ['book', book_id] })
+
+FIX — In useDeleteReview's onSuccess callback, ADD this line immediately after
+the existing invalidateQueries calls:
+
+    qc.invalidateQueries({ queryKey: ['book', bookId] })
+
+Note the variable name difference: useSubmitReview uses `book_id` (from the
+submit payload), useDeleteReview uses `bookId` (the hook parameter). Make sure
+you use the right variable name in each location.
+
+================================================================================
+FIX 4 — Social Dropdown Disappears Too Easily  [EASY]
+================================================================================
+FILE: src/components/Navbar.tsx
+
+PROBLEM: The social dropdown has `top: 'calc(100% + 4px)'`, creating a 4px gap
+between the trigger button and the dropdown. Moving the mouse across that gap
+fires onMouseLeave and closes the dropdown before you reach it.
+
+FIX (1 value):
+
+  BEFORE:  top: 'calc(100% + 4px)'
+  AFTER:   top: 'calc(100% - 2px)'
+
+The dropdown now slightly overlaps the button, eliminating the dead zone.
+
+OPTIONAL EXTRA — Also widen the hover zone by adding padding to the wrapper div:
+
+  BEFORE:  <div ref={socialRef} style={{ position: 'relative' }}>
+  AFTER:   <div ref={socialRef} style={{ position: 'relative', padding: '6px 0' }}>
+
+================================================================================
+FIX 5 — Author Name Capitalization Duplicates  [EASY]
+================================================================================
+FILES:
+  - src/pages/GoodreadsImport.tsx  (function: findOrCreateAuthor)
+  - src/pages/AddBook.tsx          (function: saveBook)
+
+PROBLEM: The DB uses ilike for matching author names, so "stephen king" matches
+"Stephen King" on SELECT. But the INSERT stores whatever case was in the input.
+If "stephen king" is stored first, a later import with "Stephen King" creates a
+duplicate row instead of matching the existing one.
+
+FIX — Add this helper function before findOrCreateAuthor in GoodreadsImport.tsx:
+
+    function toTitleCase(str: string): string {
+      return str.trim().replace(/\w\S*/g, (txt) =>
+        txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase()
+      )
+    }
+
+Then in findOrCreateAuthor, replace BOTH occurrences of `name.trim()` with
+`toTitleCase(name)` — one in the .ilike() call, one in the .insert() call.
+
+ALSO apply to AddBook.tsx: In the saveBook function, wrap the authorName
+variable with toTitleCase() before it's passed to the authors upsert. Either
+add the same helper at the top of that file, or import it from a shared util.
+
+================================================================================
+FIX 6 — Genre Display Bug ("Myth.[] 0")  [EASY]
+================================================================================
+FILES:
+  - src/pages/BookPage.tsx
+  - src/pages/Home.tsx
+
+PROBLEM (two separate issues):
+
+  PART A — Null genres in BookPage:
+  The genres array is built as:
+    const genres = book.book_genres?.map((bg: any) => bg.genres) ?? []
+  If any book_genres row has a missing/null genres join (e.g. the genre was
+  deleted), the array contains null entries, causing render errors.
+
+  FIX PART A — Add .filter(Boolean):
+    BEFORE:
+      const genres = book.book_genres?.map((bg: any) => bg.genres) ?? []
+    AFTER:
+      const genres = (book.book_genres?.map((bg: any) => bg.genres) ?? []).filter(Boolean)
+
+  PART B — Wrong genre slugs on Home page:
+  The GENRES array in Home.tsx uses hardcoded slugs (e.g. 'fantasy',
+  'science-fiction') that don't match the slugs the populate script generated
+  from OpenLibrary subjects (e.g. 'fantasy-fiction',
+  'mystery-and-detective-stories').
+
+  FIX PART B — Check your actual database first:
+    1. Open Supabase Dashboard → Table Editor → genres table → sort by name
+    2. Note the exact slug values for the genres you want
+    3. Update the GENRES array in src/pages/Home.tsx to use those exact slugs
+
+  EXAMPLE (your actual slugs may differ — verify in the DB first):
+
+    const GENRES = [
+      { label: 'All',             value: '' },
+      { label: 'Fantasy',         value: 'fantasy-fiction' },
+      { label: 'Science Fiction', value: 'science-fiction' },
+      { label: 'Mystery',         value: 'mystery-and-detective-stories' },
+      { label: 'Romance',         value: 'romance' },
+      { label: 'Thriller',        value: 'thriller' },
+      { label: 'Biography',       value: 'biography' },
+      { label: 'History',         value: 'history' },
+    ]
+
+  IMPORTANT: Copy slugs exactly from the database. Don't guess.
+
+================================================================================
+FIX 7 — Add Book & Goodreads Import RLS Error  [MEDIUM — Supabase Dashboard]
+================================================================================
+PROBLEM: Row-Level Security (RLS) is enabled on books, authors, book_authors,
+genres, and book_genres, but there are no INSERT/UPDATE policies for
+authenticated users. All writes are blocked — this is why Add Book and Goodreads
+Import fail.
+
+ALL STEPS ARE IN THE SUPABASE DASHBOARD (no code changes needed):
+
+  1. Go to Authentication → Policies (or Table Editor → [table] → RLS)
+
+  2. For EACH of these 5 tables:
+       books, authors, book_authors, genres, book_genres
+
+     Click "New Policy" → "For full customization":
+       Policy name:          Allow authenticated inserts
+       Allowed operation:    INSERT
+       USING expression:     (leave blank)
+       WITH CHECK expression: auth.uid() IS NOT NULL
+     Click Save.
+
+  3. For books and authors ONLY, also add an UPDATE policy:
+       Policy name:          Allow authenticated updates
+       Allowed operation:    UPDATE
+       USING expression:     auth.uid() IS NOT NULL
+       WITH CHECK expression: auth.uid() IS NOT NULL
+     Click Save.
+
+  4. For user_books and reviews, verify that per-user policies exist:
+       SELECT / UPDATE / DELETE — USING:    auth.uid() = user_id
+       INSERT                  — WITH CHECK: auth.uid() = user_id
+     If these are missing, create them using the same "New Policy" flow.
+
+After saving all policies, test Add Book and Goodreads Import again.
+
+================================================================================
+FIX 8 — Search Bar Autocomplete on Hero Section  [MEDIUM]
+================================================================================
+FILE: src/pages/Home.tsx
+
+PROBLEM: The Navbar search shows live suggestions (useSearch + 300ms debounce
+after 2 characters). The hero search on the Home page is a plain HTML form that
+only submits to /search?q=... with no suggestions.
+
+FIX — Add live suggestions to the hero search:
+
+  STEP 1 — Add imports at the top of Home.tsx (if not already present):
+    import { useRef, useEffect } from 'react'
+    import { useSearch } from '../hooks/useSearch'
+
+  STEP 2 — Add state inside the component (near other useState declarations):
+    const [heroDebounced, setHeroDebounced] = useState('')
+    const [heroDropOpen, setHeroDropOpen] = useState(false)
+    const heroWrapRef = useRef<HTMLDivElement>(null)
+
+  STEP 3 — Add a debounce effect (after existing useEffects):
+    useEffect(() => {
+      const t = setTimeout(() => setHeroDebounced(query), 300)
+      return () => clearTimeout(t)
+    }, [query])
+
+    const { data: heroSuggestions } = useSearch(heroDebounced)
+
+  STEP 4 — Wrap the existing <form className="hero-search-wrap"> in a div:
+    <div ref={heroWrapRef} style={{ position: 'relative', width: '100%', maxWidth: 580 }}>
+      <form className="hero-search-wrap"> ... </form>
+
+      {heroDropOpen && heroSuggestions?.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0,
+                      background: '#fff', border: '1px solid #ccc',
+                      borderRadius: 8, zIndex: 100 }}>
+          {heroSuggestions.map((item: any) => (
+            <div key={item.id}
+                 onClick={() => navigate(`/books/${item.id}`)}
+                 style={{ padding: '10px 16px', cursor: 'pointer' }}>
+              {item.title}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+
+  STEP 5 — Set heroDropOpen to true when the input gains focus and false when
+  clicking outside (use a click-outside handler on heroWrapRef, same pattern
+  as the Navbar social dropdown).
+
+================================================================================
+FIX 9 — Goodreads Import Still Failing (Post-RLS)  [MEDIUM-HARD]
+================================================================================
+PREREQUISITE: Complete Fix 7 (RLS policies) first.
+
+After fixing RLS, the import should work for books already in the database.
+For books NOT in the database (new entries created from the CSV), you may still
+see failures. Use the Done screen's collapsible error log to identify which
+table is failing and what the error is.
+
+KNOWN REMAINING ISSUES:
+
+  ISSUE A — No cover image for newly created books:
+  Books created during import only get title, ISBN, publisher, and page count.
+  No cover URL is fetched.
+
+  WORKAROUND: After import, use the Add Book page to find the book and edit it,
+  or add a post-import step that calls the OpenLibrary cover endpoint using the
+  ISBN:
+    https://covers.openlibrary.org/b/isbn/{ISBN}-L.jpg
+
+  ISSUE B — Author name mismatch:
+  If the CSV author name doesn't match the DB (different casing), a duplicate
+  author row is created. Fix 5 (title case normalization) resolves this for
+  future imports, but existing duplicate rows must be merged manually in the
+  Supabase Table Editor.
+
+  ISSUE C — Custom shelf names:
+  The parser maps Goodreads shelf names to internal shelves:
+    to-read           → want_to_read
+    currently-reading → reading
+    read              → completed
+  Any custom shelf names in your CSV will default to want_to_read. This is
+  expected behavior — no fix needed unless you want custom shelf support.
+
+DIAGNOSIS STEPS:
+  1. Attempt an import with a small CSV (5–10 books)
+  2. On the Done screen, expand the error log
+  3. Each error shows the book title and the specific DB error message
+  4. Match the error to the issues above and apply the appropriate fix
+
+================================================================================
+FIX 10 — Reading Challenges Redesign  [HARD]
+================================================================================
+FILE: src/pages/Challenges.tsx
+ALSO REQUIRES: Supabase SQL Editor (for database trigger)
+
+PROBLEM: The challenges page exists but progress tracking is disconnected from
+the library. The `progress` field in challenge_members is never updated
+automatically — it stays at 0 regardless of how many books you mark as
+completed.
+
+STEP A — Add a database trigger (Supabase SQL Editor → New Query):
+
+    CREATE OR REPLACE FUNCTION update_challenge_progress()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      IF NEW.shelf = 'completed' AND (OLD.shelf IS NULL OR OLD.shelf != 'completed') THEN
+        UPDATE challenge_members
+        SET progress = progress + 1
+        WHERE user_id = NEW.user_id
+          AND challenge_id IN (
+            SELECT id FROM challenges
+            WHERE year = EXTRACT(YEAR FROM NOW())
+            AND is_public = true
+          );
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    CREATE TRIGGER challenge_progress_trigger
+    AFTER INSERT OR UPDATE ON user_books
+    FOR EACH ROW
+    EXECUTE FUNCTION update_challenge_progress();
+
+Run this SQL. Now every time a book is moved to the "completed" shelf, all
+active challenge memberships for that user auto-increment.
+
+STEP B — Add a link to /challenges from the Library page sidebar so users can
+find the challenges page without navigating blind.
+
+STEP C — UI improvements in Challenges.tsx (suggested changes):
+
+  1. Add a "My Challenges" section at the top that shows only challenges the
+     current user has joined (filter by user_id in challenge_members).
+
+  2. Add a year filter — default to current year (new Date().getFullYear()),
+     and show a <select> to change it.
+
+  3. Show each user's progress prominently on their joined challenge card:
+       e.g. "14 / 52 books read this year"
+
+  4. Add a leaderboard per challenge — query challenge_members ordered by
+     progress DESC, show top 5 users with their progress counts.
+
+================================================================================
+FIX 11 — Homepage Loading Performance  [HARD]
+================================================================================
+FILES:
+  - src/hooks/useBook.ts  (usePopularBooks, useRecentBooks)
+  - src/pages/Home.tsx    (useFeed call)
+
+PROBLEM: The homepage fires 3–4 Supabase queries on load. usePopularBooks makes
+up to 3 sequential queries (cascading fallbacks) if earlier steps return few
+results. Every navigation away and back re-fetches all of them.
+
+STEP A — Add staleTime to prevent unnecessary re-fetches:
+In useBook.ts, for both usePopularBooks and useRecentBooks, add to the query
+options:
+
+    staleTime: 1000 * 60 * 5,  // 5 minutes
+
+This means React Query will serve cached data for 5 minutes instead of
+re-fetching on every navigation.
+
+STEP B — Simplify usePopularBooks to a single query:
+Replace the entire cascading query logic with one query:
+
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('books')
+        .select('*, book_authors(role, authors(id, name)), book_ratings(avg_rating, rating_count)')
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (error) throw error
+      return (data ?? []).sort((a: any, b: any) =>
+        (b.book_ratings?.rating_count ?? 0) - (a.book_ratings?.rating_count ?? 0)
+      )
+    }
+
+This replaces up to 3 round-trips with a single query that fetches recent books
+and sorts by rating count client-side.
+
+STEP C — Lazy-load the feed section:
+The useFeed hook in Home.tsx runs immediately on page load, even when the user
+hasn't scrolled to see the feed. Options:
+
+  Option 1 — Use an IntersectionObserver: only enable the useFeed query once
+  the feed section scrolls into view. Pass `enabled: isFeedVisible` to the
+  hook's useQuery options.
+
+  Option 2 — Wrap the feed in React.Suspense with a lazy-loaded component so
+  it doesn't block the initial render.
+
+STEP D — Reduce join depth on home page queries:
+For the home page book shelf display, you only need a subset of fields.
+Consider a lighter .select() string:
+
+    .select('id, title, cover_url, book_authors(authors(name)), book_ratings(avg_rating, rating_count)')
+
+This skips joins you don't use on the home page and reduces response payload
+size.
+
+================================================================================
+END OF GUIDE
+================================================================================
+Apply fixes in order — each one builds confidence before tackling the next.
+Fixes 1–6 are safe, local code changes with no database side effects.
+Fix 7 is the critical unblock for all write operations.
+Fixes 8–11 are improvements that can be deferred if time is short.

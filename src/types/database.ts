@@ -15,7 +15,7 @@ export interface Database {
           description: string | null
           isbn_10: string | null
           isbn_13: string | null
-          publish_date: string | null
+          publish_date: number | null
           publisher: string | null
           page_count: number | null
           language: string
@@ -94,6 +94,33 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['follows']['Row'], 'created_at'>
         Update: never
       }
+      book_authors: {
+        Row: {
+          book_id: string
+          author_id: string
+          role: string
+        }
+        Insert: Database['public']['Tables']['book_authors']['Row']
+        Update: Partial<Database['public']['Tables']['book_authors']['Insert']>
+      }
+      book_genres: {
+        Row: {
+          book_id: string
+          genre_id: string
+        }
+        Insert: Database['public']['Tables']['book_genres']['Row']
+        Update: Partial<Database['public']['Tables']['book_genres']['Insert']>
+      }
+      genres: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['genres']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['genres']['Insert']>
+      }
     }
     Views: {
       book_ratings: {
@@ -104,5 +131,8 @@ export interface Database {
         }
       }
     }
+    Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }
