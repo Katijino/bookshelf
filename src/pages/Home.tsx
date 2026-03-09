@@ -6,6 +6,8 @@ import BookShelf from '../components/BookShelf'
 import ReviewCard from '../components/ReviewCard'
 import { usePopularBooks, useRecentBooks, useBooks } from '../hooks/useBook'
 import { useFeed } from '../hooks/useFeed'
+import { useRef, useEffect } from 'react'
+import { useSearch } from '../hooks/useSearch'
 
 const GENRES = [
   { label: 'All',                value: '' },
@@ -49,6 +51,27 @@ export default function Home() {
   const user = useAuthStore((s) => s.user)
   const [query, setQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('')
+  const [heroDebounced, setHeroDebounced] = useState('')
+  const [heroDropOpen, setHeroDropOpen] = useState(false)
+  const heroWrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => setHeroDebounced(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (heroWrapRef.current && !heroWrapRef.current.contains(e.target as Node)) {
+        setHeroDropOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const { data: heroSuggestions } = useSearch(heroDebounced)
+  const hasHeroResults = heroSuggestions && (heroSuggestions.books.length > 0 || heroSuggestions.authors.length > 0)
 
   const { data: popularBooks, isLoading: popularLoading } = usePopularBooks()
   const { data: recentBooks, isLoading: recentLoading } = useRecentBooks()
@@ -80,18 +103,109 @@ export default function Home() {
 
           <div className="hero-divider" />
 
-          <form className="hero-search-wrap" onSubmit={handleSearch}>
-            <input
-              className="hero-search-input"
-              type="text"
-              placeholder="Search books, authors, ISBN…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <button className="hero-search-btn" type="submit">
-              Search
-            </button>
-          </form>
+          <div ref={heroWrapRef} style={{ position: 'relative', width: '100%', maxWidth: 580 }}>
+            <form className="hero-search-wrap" onSubmit={handleSearch}>
+              <input
+                className="hero-search-input"
+                value={query}
+                onChange={e => { setQuery(e.target.value); setHeroDropOpen(true) }}
+                onFocus={() => setHeroDropOpen(true)}
+                placeholder="Search books or authors…"
+                autoComplete="off"
+              />
+              <button type="submit" className="hero-search-btn">Search</button>
+            </form>
+
+            {heroDropOpen && query.length >= 2 && hasHeroResults && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 10px)', left: 0, right: 0,
+                background: '#DCC9A8', border: '1px solid #B8A47C',
+                borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
+                zIndex: 100, overflow: 'hidden', maxHeight: 420, overflowY: 'auto',
+              }}>
+                {heroSuggestions!.books.length > 0 && (
+                  <>
+                    <div style={{
+                      padding: '10px 16px 4px', fontSize: '0.7rem', fontWeight: 700,
+                      color: '#7A5030', letterSpacing: '0.08em', textTransform: 'uppercase',
+                      fontFamily: '"DM Sans", sans-serif',
+                    }}>
+                      Books
+                    </div>
+                    {heroSuggestions!.books.slice(0, 6).map((book: any) => (
+                      <Link
+                        key={book.id}
+                        to={`/book/${book.id}`}
+                        onClick={() => { setHeroDropOpen(false); setQuery('') }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '9px 16px', textDecoration: 'none',
+                          borderBottom: '1px solid #B8A47C', transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#C8B490')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {book.cover_url
+                          ? <img src={book.cover_url} alt={book.title} style={{ width: 30, height: 44, objectFit: 'cover', borderRadius: 3, flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.2)' }} />
+                          : <div style={{ width: 30, height: 44, background: 'linear-gradient(135deg, #c8a882, #8b5e3c)', borderRadius: 3, flexShrink: 0 }} />
+                        }
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1A0A02', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: '"DM Sans", sans-serif' }}>
+                            {book.title}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: '#7A5030', fontFamily: '"DM Sans", sans-serif' }}>
+                            {book.book_authors?.[0]?.authors?.name ?? ''}
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </>
+                )}
+
+                {heroSuggestions!.authors.length > 0 && (
+                  <>
+                    <div style={{
+                      padding: '10px 16px 4px', fontSize: '0.7rem', fontWeight: 700,
+                      color: '#7A5030', letterSpacing: '0.08em', textTransform: 'uppercase',
+                      fontFamily: '"DM Sans", sans-serif',
+                    }}>
+                      Authors
+                    </div>
+                    {heroSuggestions!.authors.slice(0, 3).map((author: any) => (
+                      <Link
+                        key={author.id}
+                        to={`/author/${author.id}`}
+                        onClick={() => { setHeroDropOpen(false); setQuery('') }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '9px 16px', textDecoration: 'none', transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#C8B490')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#1A0A02', fontFamily: '"DM Sans", sans-serif' }}>
+                          {author.name}
+                        </div>
+                      </Link>
+                    ))}
+                  </>
+                )}
+
+                <div
+                  style={{
+                    padding: '9px 16px', fontSize: '0.8rem', color: '#5C3A1A',
+                    cursor: 'pointer', fontWeight: 600, borderTop: '1px solid #B8A47C',
+                    fontFamily: '"DM Sans", sans-serif',
+                  }}
+                  onMouseDown={e => { e.preventDefault(); navigate(`/search?q=${encodeURIComponent(query)}`); setHeroDropOpen(false); setQuery('') }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#C8B490')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  See all results for "{query}" →
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="hero-features">
             <span className="hero-feature">

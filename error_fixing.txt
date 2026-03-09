@@ -4,7 +4,7 @@ Ordered from easiest to hardest. Do NOT apply these as automated patches —
 read each step, understand it, then make the change manually.
 
 ================================================================================
-FIX 1 — Remove "Explore" Scroll Hint  [TRIVIAL]
+FIX 1 — Remove "Explore" Scroll Hint  [TRIVIAL] -DONE
 ================================================================================
 FILE: src/pages/Home.tsx
 LINES: ~142–146 (inside <section className="hero-section">, near the bottom)
@@ -26,7 +26,7 @@ Removing the CSS is safe and cleans up dead code, but the app won't break if
 you leave it.
 
 ================================================================================
-FIX 2 — Star Color Contrast  [TRIVIAL]
+FIX 2 — Star Color Contrast  [TRIVIAL] - DONE
 ================================================================================
 FILE: src/components/StarRating.tsx
 
@@ -46,7 +46,7 @@ CHANGE (2 values only):
 That's it. Two hex swaps, done.
 
 ================================================================================
-FIX 3 — Community Rating Doesn't Refresh After Submit  [EASY]
+FIX 3 — Community Rating Doesn't Refresh After Submit  [EASY] - DONE
 ================================================================================
 FILE: src/hooks/useReviews.ts
 
@@ -71,7 +71,7 @@ submit payload), useDeleteReview uses `bookId` (the hook parameter). Make sure
 you use the right variable name in each location.
 
 ================================================================================
-FIX 4 — Social Dropdown Disappears Too Easily  [EASY]
+FIX 4 — Social Dropdown Disappears Too Easily  [EASY] - DONE
 ================================================================================
 FILE: src/components/Navbar.tsx
 
@@ -92,7 +92,7 @@ OPTIONAL EXTRA — Also widen the hover zone by adding padding to the wrapper di
   AFTER:   <div ref={socialRef} style={{ position: 'relative', padding: '6px 0' }}>
 
 ================================================================================
-FIX 5 — Author Name Capitalization Duplicates  [EASY]
+FIX 5 — Author Name Capitalization Duplicates  [EASY] -NOT DONE
 ================================================================================
 FILES:
   - src/pages/GoodreadsImport.tsx  (function: findOrCreateAuthor)
